@@ -8,39 +8,46 @@ def gotoPercent(control, motorA=None, motorB=None):  #, motorB):
 
     #if left0 < left50:
     #    limitA = #currentLeft - currentRight - minDistance
+    warning = False
 
-    if motorA is not None:
-        tickA = percentToTicksCalcA(motorA)
-        limitL = leftLimitingPos + (curR - rightLimitingPos) - pad
-        limitR = rightLimitingPos + (curL - leftLimitingPos) + pad
-        print "limitL: " + str(limitL) + "   GOTOL: " + str(tickA) + " curL: " + str(curL)
-        warning = False
+    tickA = percentToTicksCalcA(motorA)
+    tickB = percentToTicksCalcB(motorB)
+    limitL = leftLimitingPos + (curR - rightLimitingPos) - pad
+    limitR = rightLimitingPos + (curL - leftLimitingPos) + pad
+    print "limitL: " + str(limitL) + "   GOTOL: " + str(tickA) + " curL: " + str(curL) + " limitR: " + str(limitR) \
+         + " GOTOR: " + str(tickB) + " curR: " + str(curR)
 
-        if tickA > limitL:
-            print "LIMIT WARNING!!!"
-            warning = True
-            if left0 < left50:
-                tickA = limitL
-                if tickA < left0:
-                    tickA = left0
-            else:
-                tickA = limitL
-                if tickA > left0:
-                    tickA = left0
-            print "GOTONEW: " + str(tickA)
-        stdA = control.encoder.convertPositionTicksToStd(tickA)
-        control.gotoPosition(stdA)
 
-    if motorB is not None:
-        tickB = percentToTicksCalcB(motorB)
-        limitR = rightLimitingPos - (curL - leftLimitingPos) + pad
-        print "limitR: " + str(limitR) + "   GOTOL: " + str(tickB) + " curL: " + str(curR)
-        if tickB - pad < limitR:
-            tickA = limitR
-            if right50 < right100:
-                tickB = limitR
-        stdB = control.encoder.convertPositionTicksToStd(tickB)
-        control.gotoPosition(stdA, stdB)
+
+    if tickA > limitL:
+        print "LIMIT WARNING!!!"
+        warning = True
+        offset = tickA - limitL
+       #     if tickA < left0:
+       #         tickA = left0
+       # else:
+       #     tickA = limitL
+       #     if tickA > left0:
+       #         tickA = left0
+       # print "GOTONEW: " + str(tickA)
+
+
+
+    if tickB < limitR:
+        print "RIGHT BREAKING LIMIT"
+        tickB = limitR
+        if right50 < right100:
+            tickB = limitR
+
+    if warning:
+        tickA = limitL  # wait until the other is out of the way...
+        tickB += offset
+        if tickB < right100:
+            tickB = right100
+    stdA = control.encoder.convertPositionTicksToStd(tickA)
+    stdB = control.encoder.convertPositionTicksToStd(tickB)
+    control.gotoPosition(stdA, stdB)
+            
 
 def percentToTicksCalcA(motor):
     # conditionals are a safety check depending on which way the encoder is reading...
@@ -52,9 +59,9 @@ def percentToTicksCalcA(motor):
 
 def percentToTicksCalcB(motor):
     if right50 < right100:
-        positionsTicks = right50 + (lengthRight * motor)
+        positionTicks = right100 - (lengthRight * motor)
     else:
-        positionTicks = right50 - (lengthRight * motor)
+        positionTicks = right100 + (lengthRight * motor)
     return positionTicks
 
 def percentToStdCalcA(motor):
@@ -121,7 +128,10 @@ field.start()
 while True:
     curL = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
     curR = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[1])
-    percent = field.puckLocationsPercent()[0]
-    gotoPercent(control, percent)
+    percent = field.puckLocationsPercent()
+    percent = list(percent)
+    percent.sort()
+    print percent 
+    gotoPercent(control, percent[0], percent[1])
     control.fire(1)
     time.sleep(.1)
