@@ -9,6 +9,8 @@ def gotoPercent(control, motorA=None, motorB=None):  #, motorB):
     #if left0 < left50:
     #    limitA = #currentLeft - currentRight - minDistance
 
+    curL = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
+    curR = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[1])
     if motorA is not None:
         tickA = percentToTicksCalcA(motorA)
         limitL = leftLimitingPos + (curR - rightLimitingPos) - pad
@@ -76,11 +78,11 @@ def percentToStdCalcB(motor):
 
 def trackPuck(control, field):
     while True:
-        percents = field.puckLocationsPercent()
-        percents = list(percents).sort()
-        gotoPercent(control, percents[0])   #, percents[1])
+        percent = field.puckLocationsPercent()[0]
+        gotoPercent(control, percent)
+        time.sleep(.1)
 
-pad = 300
+pad = 100
 
 controller = raw_input("Enter Controller extension: ")
 encoder = raw_input("Enter Encoder extension: ")
@@ -118,10 +120,16 @@ field.start()
 #gotoPercent(control, .5, touchLimit)
 
 #control.triggerAWorker(.15)
+
+tracking = Process(target=trackPuck, args=(control, field))
+tracking.start()
 while True:
-    curL = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
-    curR = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[1])
-    percent = field.puckLocationsPercent()[0]
-    gotoPercent(control, percent)
-    control.fire(1)
-    time.sleep(.1)
+    puck = field.puckLocationsPercent()[0]
+    puck = percentToTicksCalcA(puck)
+
+    carriage = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
+
+    #if abs(puck - carriage) < 20
+    #    control.fire(1)
+    #else:
+    #    push(1)
