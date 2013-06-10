@@ -30,7 +30,9 @@ def gotoPercent(control, motorA=None, motorB=None):  #, motorB):
                 if tickA > left0:
                     tickA = left0
             print "GOTONEW: " + str(tickA)
-        stdA = control.encoder.convertPositionTicksToStd(tickA)
+        stdA = control.encoder.convertPositionTicksToStd(int(tickA))
+        print stdA
+        print control.encoder.getPositions()[0]
         control.gotoPosition(stdA)
 
     if motorB is not None:
@@ -80,7 +82,7 @@ def trackPuck(control, field):
     while True:
         percent = field.puckLocationsPercent()[0]
         gotoPercent(control, percent)
-        time.sleep(.1)
+        time.sleep(.5)
 
 pad = 100
 
@@ -123,11 +125,16 @@ field.start()
 
 tracking = Process(target=trackPuck, args=(control, field))
 tracking.start()
+puckRadius = 40
 while True:
     puck = field.puckLocationsPercent()[0]
     puck = percentToTicksCalcA(puck)
 
     carriage = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
+
+    if abs(puck - carriage) < puckRadius:
+        control.fire(1)
+
 
     #if abs(puck - carriage) < 20
     #    control.fire(1)
