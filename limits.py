@@ -2,6 +2,7 @@ from pyArduControl import Encoder, ArduControl
 from pyCrossfire import FieldAnalyzer
 from multiprocessing import Process
 import time
+import re
 
 def gotoPercent(control, motorA=None, motorB=None):  #, motorB):
     
@@ -11,40 +12,50 @@ def gotoPercent(control, motorA=None, motorB=None):  #, motorB):
 
     curL = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
     curR = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[1])
-    if motorA is not None:
-        tickA = percentToTicksCalcA(motorA)
-        limitL = leftLimitingPos + (curR - rightLimitingPos) - pad
-        limitR = rightLimitingPos + (curL - leftLimitingPos) + pad
-        print "limitL: " + str(limitL) + "   GOTOL: " + str(tickA) + " curL: " + str(curL)
-        warning = False
+    tickA = percentToTicksCalcA(motorA)
+    limitL = leftLimitingPos + (curR - rightLimitingPos) - pad
+    limitR = rightLimitingPos + (curL - leftLimitingPos) + pad
+#    print "limitL: " + str(limitL) + "   GOTOL: " + str(tickA) + " curL: " + str(curL)
+    warning = False
 
-        if tickA > limitL:
-            print "LIMIT WARNING!!!"
-            warning = True
-            if left0 < left50:
-                tickA = limitL
-                if tickA < left0:
-                    tickA = left0
-            else:
-                tickA = limitL
-                if tickA > left0:
-                    tickA = left0
-            print "GOTONEW: " + str(tickA)
-        stdA = control.encoder.convertPositionTicksToStd(int(tickA))
-        print stdA
-        print control.encoder.getPositions()[0]
-        control.gotoPosition(stdA)
+    if tickA > limitL:
+#        print "LIMIT WARNING!!!"
+        warning = True
+        #if left0 < left50:
+        #    tickA = limitL
+        #    if tickA < left0:
+        #        tickA = left0
+        #else:
+        #    tickA = limitL
+        #    if tickA > left0:
+        #        tickA = left0
+        #print "GOTONEW: " + str(tickA)
 
-    if motorB is not None:
-        tickB = percentToTicksCalcB(motorB)
-        limitR = rightLimitingPos - (curL - leftLimitingPos) + pad
-        print "limitR: " + str(limitR) + "   GOTOL: " + str(tickB) + " curL: " + str(curR)
-        if tickB - pad < limitR:
-            tickA = limitR
-            if right50 < right100:
-                tickB = limitR
-        stdB = control.encoder.convertPositionTicksToStd(tickB)
-        control.gotoPosition(stdA, stdB)
+    
+    tickB = percentToTicksCalcB(motorB)
+#    print "limitR: " + str(limitR) + "   GOTOR: " + str(tickB) + " curR: " + str(curR)
+    
+    if warning:
+        tickB += abs(curL - limitL)
+        if tickB > right100:
+#            print "RIGHT HITTING WALL, CHANGING LEFT"
+            tickA = limitL 
+            tickB = right100
+    
+    #if tickB < limitR:
+    #    tickB = limitR
+        
+    stdA = control.encoder.convertPositionTicksToStd(int(tickA))
+#    print "gotoA: " + str(stdA)
+#    print "actualA: " + str(control.encoder.getPositions()[0])
+    stdB = control.encoder.convertPositionTicksToStd(int(tickB))
+#    print "gotoB: " + str(stdB)
+#    print "actualB: " + str(control.encoder.getPositions()[1])
+    control.gotoPosition(stdA, stdB)
+
+def track():
+    tracking = Process(target=trackPuck, args=(control, field))
+    tracking.start()
 
 def percentToTicksCalcA(motor):
     # conditionals are a safety check depending on which way the encoder is reading...
@@ -56,9 +67,9 @@ def percentToTicksCalcA(motor):
 
 def percentToTicksCalcB(motor):
     if right50 < right100:
-        positionsTicks = right50 + (lengthRight * motor)
+        positionTicks = (right100 - lengthRight) + (lengthRight * motor)
     else:
-        positionTicks = right50 - (lengthRight * motor)
+        positionTicks = (right100 - lengthRight) - (lengthRight * motor)
     return positionTicks
 
 def percentToStdCalcA(motor):
@@ -79,10 +90,51 @@ def percentToStdCalcB(motor):
     return position    
 
 def trackPuck(control, field):
+    percent = field.puckLocationsPercent()
+    percent = list(percent)
+    percent.sort()
+    oldpercent = (not percent[0], not percent[1])
     while True:
-        percent = field.puckLocationsPercent()[0]
-        gotoPercent(control, percent)
+        gotoPercent(control, percent[0], percent[1])
+        percent = field.puckLocationsPercent()
+        percent = list(percent)
+        percent.sort()
+#        print percent
         time.sleep(.5)
+
+def firing(control, field): 
+    print "I sort of work"
+    while True:
+        puckA = field.puckLocationsPercent()[0]
+        puckA = percentToTicksCalcA(puckA)
+        puckB = field.puckLocationsPercent()[1]
+        puckB = percentToTicksCalcA(puckB)
+
+        carriageA = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
+        carriageB = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[1])
+
+        carriageAVel = control.encoder.getVelocities()[0]
+        carriageBVel = control.encoder.getVelocities()[1]
+        print "I work!" 
+        if abs(puckA - carriageA) < puckRadius / 3 or abs(puckB - carriageA) < puckRadius / 3:
+            control.triggerAOpen()
+            print "UNLOAD A"
+        elif abs(puckA - carriageA) < puckRadius or abs(puckB - carriageA) < puckRadius:
+            print "FIRE A"
+            control.fire(triggerA=1)
+        else:
+            control.triggerAClose()
+
+        if abs(puckA - carriageB) < puckRadius / 3 or abs(puckB - carriageB) < puckRadius / 3:
+            control.triggerBOpen()
+            print "UNLOAD B"
+        elif abs(puckA - carriageB) < puckRadius or abs(puckB - carriageB) < puckRadius:
+            control.fire(triggerB=1)
+            print "FIRE A"
+        else:
+            control.triggerBClose()
+
+
 
 pad = 100
 
@@ -91,15 +143,19 @@ encoder = raw_input("Enter Encoder extension: ")
 
 control = ArduControl(controller, encoder_board = Encoder(encoder, 464))
 
+while not re.match(r"[yY]", raw_input("Press enter to chck encoder. Y,y to exit")):
+    print control.encoder.getPositions()
+
 field = FieldAnalyzer(1)
-field.calibrate()
 raw_input("Put left carriage at 0%, then press enter")
 
 left0 = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
+print left0
 raw_input("Put left carriage at 50% limit then press enter")
 
-left50 = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
 
+left50 = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
+print left50
 raw_input("Put left carriage close to right carriage")
 
 leftLimitingPos = (control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0]))
@@ -108,35 +164,53 @@ rightLimitingPos = (control.encoder.convertPositionStdToTicks(control.encoder.ge
 raw_input("Put right carriage at 100%, then press enter")
 
 right100 = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[1])
-
+print right100
 raw_input("Put right carriage at 50%, then press enter")
 
 right50 = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[1])
-
+print right50
 lengthLeft = abs(left0 - left50) * 2
 
 lengthRight = abs(right100 - right50) * 2
 
+
+field.calibrate()
 field.start()
 
-#gotoPercent(control, .5, touchLimit)
+#fire = Process(target=firing, args=(control, field, percentToTicksCalcA, percentToTicksCalcB))
+#fire.start()
 
-#control.triggerAWorker(.15)
+track()
 
-tracking = Process(target=trackPuck, args=(control, field))
-tracking.start()
-puckRadius = 40
+puckRadius = 85
+
 while True:
-    puck = field.puckLocationsPercent()[0]
-    puck = percentToTicksCalcA(puck)
+    puckA = field.puckLocationsPercent()[0]
+    puckAforA = percentToTicksCalcA(puckA)
+    puckAforB = percentToTicksCalcB(puckA)
+    puckB = field.puckLocationsPercent()[1]
+    puckBforA = percentToTicksCalcA(puckB)
+    puckBforB = percentToTicksCalcB(puckB)
 
-    carriage = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
+    carriageA = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[0])
+    carriageB = control.encoder.convertPositionStdToTicks(control.encoder.getPositions()[1])
 
-    if abs(puck - carriage) < puckRadius:
-        control.fire(1)
+    carriageAVel = control.encoder.getVelocities()[0]
+    carriageBVel = control.encoder.getVelocities()[1]
+    if abs(puckAforA - carriageA) < puckRadius / 3 or abs(puckBforA - carriageA) < puckRadius / 3:
+        control.triggerAOpen()
+    elif abs(puckAforA - carriageA) < puckRadius or abs(puckBforA - carriageA) < puckRadius:
+        control.fire(triggerA=1)
+    else:
+        print "CLOSE A"
+        control.triggerAClose()
+
+    if abs(puckAforB - carriageB) < puckRadius / 3 or abs(puckBforB - carriageB) < puckRadius / 3:
+        control.triggerBOpen()
+    elif abs(puckAforB - carriageB) < puckRadius or abs(puckBforB - carriageB) < puckRadius:
+        control.fire(triggerB=1)
+    else:
+        print "CLOSE B"
+        control.triggerBClose()
 
 
-    #if abs(puck - carriage) < 20
-    #    control.fire(1)
-    #else:
-    #    push(1)
